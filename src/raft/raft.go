@@ -318,11 +318,10 @@ func (rf* Raft) startElection (){
 func (rf *Raft) AppendEntriesHandler(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	if args.Term < rf.Term {
 		reply.Term = rf.Term
 		reply.Success = false
-		
+		rf.mu.Unlock()
 		return 
 	} else {
 		reply.Term = rf.currentTerm
@@ -335,7 +334,7 @@ func (rf *Raft) AppendEntriesHandler(args *AppendEntriesArgs, reply *AppendEntri
 
 	}
 	
-	
+	rf.mu.Unlock()
 	
     rf.heartbeatChannel <- args
 }
@@ -402,13 +401,19 @@ func (rf *Raft) ticker() {
 		// Your code here to check if a leader election should
 		// be started and to randomize sleeping time using
 		// time.Sleep().
-	
-		switch rf.role {
+		rf.mu.Lock()
+		role := rf.role
+		rf.mu.Unlock()
+
+		switch role {
 		case Follower:
 			
 			select {
 			case <-rf.heartbeatChannel:
+				rf.mu.Lock()
 				plog("follower:", rf.me, " receive heartbeat",rf.currentTerm , rf.Term)
+
+				rf.mu.Unlock()
 				continue
 			    
 			case <-time.After(heartbeatTimeout + time.Duration(rand.Int31()%300)*time.Millisecond):
@@ -461,9 +466,10 @@ func (rf *Raft) ticker() {
 					plog("leader:", rf.me, " sendAppendEntries to", x)
 					ok := rf.sendAppendEntries(x,args,reply)
 					if ok&&reply.Success == false{
-					    plog("leader:", rf.me, " sendAppendEntries to", x, "fail")
-						plog("leader:", rf.me, "term:", rf.currentTerm, "change to", reply.Term)
+					    
 						rf.mu.Lock()
+						plog("leader:", rf.me, " sendAppendEntries to", x, "fail")
+						plog("leader:", rf.me, "term:", rf.currentTerm, "change to", reply.Term)
 						rf.role = Follower
 						rf.currentTerm = reply.Term
 						rf.votedFor = -1
