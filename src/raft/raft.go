@@ -34,6 +34,8 @@ const showlog bool = false
 
 func plog (a ...interface{}) {
 	if showlog{
+		time := time.Now().Format("15:04:05.00000  ")
+		fmt.Print(time)
 		fmt.Println(a...)
 	}
 }
@@ -75,8 +77,7 @@ const (
 )
 
 const heartbeatInterval = 100*time.Millisecond
-const heartbeatTimeout = 300*time.Millisecond
-const electionTimeout = 1000*time.Millisecond
+const electionTimeout = 300*time.Millisecond
 
 
 //
@@ -93,8 +94,8 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 	// 2A
-	Term  		int
 	currentTerm int
+	leaderId    int
 	role 		RoleType
 	heartbeatChannel chan *AppendEntriesArgs
 	winElectionChannel chan bool
@@ -117,7 +118,7 @@ func (rf *Raft) GetState() (int, bool) {
 	var isleader bool
 	// Your code here (2A).
 	rf.mu.Lock()
-	term = rf.Term
+	term = rf.currentTerm
 	isleader = rf.role == Leader
 	rf.mu.Unlock()
 	return term, isleader
@@ -222,7 +223,7 @@ func (rf *Raft) RequestVoteHandler(args *RequestVoteArgs, reply *RequestVoteRepl
 	// Your code here (2A, 2B).
 	
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	
 	plog(rf.role ,rf.me ," receive request from", args.CandidateId, "term", args.Term, rf.currentTerm)
 	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm || (rf.votedFor != -1 && rf.votedFor != rf.me){
@@ -231,12 +232,13 @@ func (rf *Raft) RequestVoteHandler(args *RequestVoteArgs, reply *RequestVoteRepl
 		
 		reply.VoteGranted = true
 		rf.role = Follower
-		rf.currentTerm = rf.Term
 		rf.voteCount = 0
 		rf.votedFor = args.CandidateId
 
 	}
+	rf.mu.Unlock()
 
+	rf.heartbeatChannel <- &AppendEntriesArgs{}
 }
 
 //
@@ -276,7 +278,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 func (rf* Raft) startElection (){
 	rf.mu.Lock()
 	rf.voteCount = 1
-	rf.currentTerm = rf.Term +1
+	rf.currentTerm ++
 	rf.votedFor = rf.me
 	args := &RequestVoteArgs{Term: rf.currentTerm, CandidateId: rf.me}
 	rf.mu.Unlock()
@@ -289,7 +291,6 @@ func (rf* Raft) startElection (){
 			ok := rf.sendRequestVote(x, args, reply)
 			rf.mu.Lock()
 			if reply.Term > rf.currentTerm {
-				rf.currentTerm = rf.Term
 				rf.votedFor = -1
 				rf.voteCount = 0
 				rf.role = Follower
@@ -299,7 +300,6 @@ func (rf* Raft) startElection (){
 				plog("candidate ", rf.me ," get vote from ", x, "votecount:" ,rf.voteCount)
 				if rf.voteCount > len(rf.peers)/2 {
 					rf.role = Leader
-					rf.Term = rf.currentTerm
 					plog("candidate:", rf.me, " win election")
 
 				
@@ -318,8 +318,9 @@ func (rf* Raft) startElection (){
 func (rf *Raft) AppendEntriesHandler(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	
 	rf.mu.Lock()
-	if args.Term < rf.Term {
-		reply.Term = rf.Term
+	plog("follower:", rf.me, " receive heartbeat",rf.currentTerm)
+	if args.Term < rf.currentTerm {
+		reply.Term = rf.currentTerm
 		reply.Success = false
 		rf.mu.Unlock()
 		return 
@@ -328,12 +329,12 @@ func (rf *Raft) AppendEntriesHandler(args *AppendEntriesArgs, reply *AppendEntri
 		reply.Success = true
 		rf.votedFor = -1
 		rf.voteCount = 0
+		rf.leaderId = args.LeaderId
 		rf.role = Follower
 		rf.currentTerm = args.Term
-		rf.Term = rf.currentTerm
 
 	}
-	
+
 	rf.mu.Unlock()
 	
     rf.heartbeatChannel <- args
@@ -410,13 +411,9 @@ func (rf *Raft) ticker() {
 			
 			select {
 			case <-rf.heartbeatChannel:
-				rf.mu.Lock()
-				plog("follower:", rf.me, " receive heartbeat",rf.currentTerm , rf.Term)
-
-				rf.mu.Unlock()
 				continue
 			    
-			case <-time.After(heartbeatTimeout + time.Duration(rand.Int31()%300)*time.Millisecond):
+			case <-time.After(electionTimeout + time.Duration(rand.Int31()%300)*time.Millisecond):
 				rf.mu.Lock()
 				
 				rf.role = Candidate
@@ -505,7 +502,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (2A, 2B, 2C).
-	rf.Term = 1
 	rf.currentTerm = 1
 	rf.votedFor = -1
 	rf.voteCount = 0
