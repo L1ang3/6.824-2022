@@ -226,15 +226,13 @@ func (rf *Raft) RequestVoteHandler(args *RequestVoteArgs, reply *RequestVoteRepl
 	
 	plog(rf.role ,rf.me ," receive request from", args.CandidateId, "term", args.Term, rf.currentTerm)
 	reply.Term = rf.currentTerm
-	if args.Term < rf.currentTerm || (rf.votedFor != -1 && rf.votedFor != rf.me){
-		reply.VoteGranted = false
-	}  else {
-		
+	if args.Term > rf.currentTerm || (rf.votedFor != -1 && args.Term == rf.currentTerm){
 		reply.VoteGranted = true
 		rf.role = Follower
 		rf.voteCount = 0
 		rf.votedFor = args.CandidateId
-
+	}  else {
+		reply.VoteGranted = false
 	}
 	rf.mu.Unlock()
 
