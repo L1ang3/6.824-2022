@@ -8,12 +8,14 @@ package raft
 // test with the original before submitting.
 //
 
-import "testing"
-import "fmt"
-import "time"
-import "math/rand"
-import "sync/atomic"
-import "sync"
+import (
+	"fmt"
+	"math/rand"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
 
 // The tester generously allows solutions to complete elections in one second
 // (much more than the paper's range of timeouts).
@@ -61,31 +63,69 @@ func TestReElection2A(t *testing.T) {
 
 	// if the leader disconnects, a new one should be elected.
 	cfg.disconnect(leader1)
+	plog("--------------------------------------")
+	plog("disconnect", leader1)
+	plog("--------------------------------------")
+
 	cfg.checkOneLeader()
+	plog("--------------------------------------")
+	plog("checkOneLeader success")
+	plog("--------------------------------------")
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader. and the old leader
 	// should switch to follower.
 	cfg.connect(leader1)
+
+	plog("--------------------------------------")
+	plog("connect", leader1)
+	plog("--------------------------------------")
 	leader2 := cfg.checkOneLeader()
 
 	// if there's no quorum, no new leader should
 	// be elected.
 	cfg.disconnect(leader2)
 	cfg.disconnect((leader2 + 1) % servers)
+	plog("--------------------------------------")
+	plog("disconnect", leader2, (leader2+1)%servers)
+	plog("--------------------------------------")
 	time.Sleep(2 * RaftElectionTimeout)
 
 	// check that the one connected server
 	// does not think it is the leader.
 	cfg.checkNoLeader()
 
+	plog("--------------------------------------")
+	plog("checkNoLeader success")
+	plog("--------------------------------------")
+
 	// if a quorum arises, it should elect a leader.
 	cfg.connect((leader2 + 1) % servers)
+
+	plog("--------------------------------------")
+	plog("connect", (leader2+1)%servers)
+	plog("--------------------------------------")
+
+
 	cfg.checkOneLeader()
+
+	plog("--------------------------------------")
+	plog("checkOneLeader success")
+	plog("--------------------------------------")
 
 	// re-join of last node shouldn't prevent leader from existing.
 	cfg.connect(leader2)
+
+	plog("--------------------------------------")
+	plog("connect", leader2)
+	plog("--------------------------------------")
+
 	cfg.checkOneLeader()
+
+
+	plog("--------------------------------------")
+	plog("checkOneLeader success")
+	plog("--------------------------------------")
 
 	cfg.end()
 }
@@ -101,21 +141,32 @@ func TestManyElections2A(t *testing.T) {
 
 	iters := 10
 	for ii := 1; ii < iters; ii++ {
+		
 		// disconnect three nodes
 		i1 := rand.Int() % servers
 		i2 := rand.Int() % servers
-		i3 := rand.Int() % servers
+		i3 := cfg.checkOneLeader()
 		cfg.disconnect(i1)
 		cfg.disconnect(i2)
 		cfg.disconnect(i3)
+		plog("--------------------------------------")
+		plog("disconnect", i1, i2, i3)
+		plog("--------------------------------------")
 
 		// either the current leader should still be alive,
 		// or the remaining four should elect a new one.
 		cfg.checkOneLeader()
+		plog("--------------------------------------")
+		plog(ii,"checkOneLeader success")
+		plog("--------------------------------------")
 
 		cfg.connect(i1)
 		cfg.connect(i2)
 		cfg.connect(i3)
+
+		plog("--------------------------------------")
+		plog("connect", i1, i2, i3)
+		plog("--------------------------------------")
 	}
 
 	cfg.checkOneLeader()
@@ -184,7 +235,7 @@ func TestRPCBytes2B(t *testing.T) {
 //
 // test just failure of followers.
 //
-func For2023TestFollowerFailure2B(t *testing.T) {
+func TestFollowerFailure2B(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -231,7 +282,7 @@ func For2023TestFollowerFailure2B(t *testing.T) {
 //
 // test just failure of leaders.
 //
-func For2023TestLeaderFailure2B(t *testing.T) {
+func TestLeaderFailure2B(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -243,6 +294,9 @@ func For2023TestLeaderFailure2B(t *testing.T) {
 	// disconnect the first leader.
 	leader1 := cfg.checkOneLeader()
 	cfg.disconnect(leader1)
+	plog("--------------------------------------")
+	plog("disconnect", leader1)
+	plog("--------------------------------------")
 
 	// the remaining followers should elect
 	// a new leader.
@@ -301,6 +355,7 @@ func TestFailAgree2B(t *testing.T) {
 	// the full set of servers should preserve
 	// previous agreements, and be able to agree
 	// on new commands.
+	plog("----------------reconnect----------------")
 	cfg.one(106, servers, true)
 	time.Sleep(RaftElectionTimeout)
 	cfg.one(107, servers, true)
