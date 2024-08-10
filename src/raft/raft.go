@@ -216,6 +216,7 @@ func (rf *Raft) RequestVoteHandler(args *RequestVoteArgs, reply *RequestVoteRepl
 	reply.Term = rf.currentTerm
 	if args.Term > rf.currentTerm {
 		rf.role = Follower
+		rf.currentTerm = args.Term
 		rf.voteCount = 0
 		if args.LastLogTerm > rf.log[len(rf.log)-1].Term || (args.LastLogTerm == rf.log[len(rf.log)-1].Term && args.LastLogIndex >= rf.log[len(rf.log)-1].CommandIndex) {
 			reply.VoteGranted = true
@@ -354,21 +355,20 @@ func (rf *Raft) AppendEntriesHandler(args *AppendEntriesArgs, reply *AppendEntri
 
 		}
 		tmp := min(len(rf.log)-1, args.LeaderCommit)
-		rf.commitIndex = tmp
+		if tmp > 0 {
+			for tmp > rf.commitIndex {
+				rf.commitIndex++
+				plog("follower:", rf.me, " commit log", rf.commitIndex)
+				rf.applyCh <- ApplyMsg{
+					CommandValid: true,
+					Command:      rf.log[rf.commitIndex].Command,
+					CommandIndex: rf.log[rf.commitIndex].CommandIndex,
+				}
+			}
+
+		}
 		rf.mu.Unlock()
 		rf.heartbeatChannel <- args
-
-		if tmp > 0 && rf.commitIndex > rf.lastApplied {
-
-			plog("follower:", rf.me, " commit log", tmp)
-
-			rf.applyCh <- ApplyMsg{
-				CommandValid: true,
-				Command:      rf.log[tmp].Command,
-				CommandIndex: rf.log[tmp].CommandIndex,
-			}
-			rf.lastApplied = tmp
-		}
 		return
 	}
 
@@ -397,18 +397,21 @@ func (rf *Raft) AppendEntriesHandler(args *AppendEntriesArgs, reply *AppendEntri
 	rf.currentTerm = args.Term
 
 	tmp := min(len(rf.log)-1, args.LeaderCommit)
-	rf.commitIndex = tmp
+	if tmp > 0 {
+		for tmp > rf.commitIndex {
+			rf.commitIndex++
+			plog("follower:", rf.me, " commit log", rf.commitIndex)
+			rf.applyCh <- ApplyMsg{
+				CommandValid: true,
+				Command:      rf.log[rf.commitIndex].Command,
+				CommandIndex: rf.log[rf.commitIndex].CommandIndex,
+			}
+		}
+
+	}
 	rf.mu.Unlock()
 
 	rf.heartbeatChannel <- args
-	if tmp > 0 {
-		plog("follower:", rf.me, " commit log", tmp)
-		rf.applyCh <- ApplyMsg{
-			CommandValid: true,
-			Command:      rf.log[tmp].Command,
-			CommandIndex: rf.log[tmp].CommandIndex,
-		}
-	}
 
 }
 
@@ -582,15 +585,17 @@ func (rf *Raft) ticker() {
 							tmp := make([]int, len(rf.matchIndex))
 							copy(tmp, rf.matchIndex)
 							sort.Ints(tmp)
-							if tmp[len(tmp)/2] > rf.commitIndex {
-								rf.commitIndex = tmp[len(tmp)/2]
-								go func(i int, cmd interface{}) {
+
+							if tmp[len(tmp)/2] > 0 {
+								for tmp[len(tmp)/2] > rf.commitIndex {
+									rf.commitIndex++
+									plog("follower:", rf.me, " commit log", rf.commitIndex)
 									rf.applyCh <- ApplyMsg{
 										CommandValid: true,
-										Command:      cmd,
-										CommandIndex: i,
+										Command:      rf.log[rf.commitIndex].Command,
+										CommandIndex: rf.log[rf.commitIndex].CommandIndex,
 									}
-								}(rf.commitIndex, rf.log[rf.commitIndex].Command)
+								}
 							}
 
 							rf.mu.Unlock()
