@@ -33,6 +33,7 @@ import (
 
 const showlog bool = false
 
+// TODO different mode to print log
 func plog(a ...interface{}) {
 	if showlog {
 		time := time.Now().Format("15:04:05.00000  ")
@@ -335,6 +336,8 @@ func (rf *Raft) startElection() {
 }
 
 // check heart beat
+// TODO channel sending need to be optimized
+// TODO handler struct
 func (rf *Raft) AppendEntriesHandler(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 
 	rf.mu.Lock()
@@ -415,6 +418,7 @@ func (rf *Raft) AppendEntriesHandler(args *AppendEntriesArgs, reply *AppendEntri
 
 }
 
+// TODO should be moved to tool function
 func min(a int, b int) int {
 	if a < b {
 		return a
@@ -487,6 +491,7 @@ func (rf *Raft) killed() bool {
 
 // The ticker go routine starts a new election if this peer hasn't received
 // heartsbeats recently.1
+// TODO case leader is too complex
 func (rf *Raft) ticker() {
 	for rf.killed() == false {
 
